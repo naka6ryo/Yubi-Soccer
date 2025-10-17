@@ -99,6 +99,8 @@ export class HandTracker {
     this.chargeStartTime = null;
   // CHARGE 後に次の非 NONE を KICK に変換するフラグ
   this.chargePending = false;
+  // chargePending が有効な最終時刻（秒）
+  this.chargePendingUntil = 0;
   // CHARGE が holdSec を満たして確定したかを表す内部フラグ
   this.chargeHeld = false;
   this.lastTriggerTime = 0;
@@ -308,6 +310,8 @@ export class HandTracker {
       // CHARGE が解除されたとき、hold が成立していたら次の非 NONE を KICK にするフラグを立てる
       if (this.chargeHeld) {
         this.chargePending = true;
+        // 0.3 秒間だけ有効にする
+        this.chargePendingUntil = nowSecFloat + 0.3;
       }
       this.chargeHeld = false;
       this.chargeStartTime = null;
@@ -324,10 +328,18 @@ export class HandTracker {
     }
 
     // chargePending が立っていれば，次に state が非 NONE になった時点で KICK に上書きする
-    if (this.chargePending && this.state !== 'NONE') {
-      this.state = 'KICK';
-      this.stateConf = 1.0;
-      this.chargePending = false;
+    // chargePending は一定時間だけ有効にする（期限切れはクリア）
+    if (this.chargePending) {
+      if (nowSecFloat > (this.chargePendingUntil || 0)) {
+        // 期限切れ
+        this.chargePending = false;
+        this.chargePendingUntil = 0;
+      } else if (this.state !== 'NONE') {
+        this.state = 'KICK';
+        this.stateConf = 1.0;
+        this.chargePending = false;
+        this.chargePendingUntil = 0;
+      }
     }
   // 更新されたアクション状態を組み立てて onResult に渡す
   this.actionState.state = this.state;
@@ -342,7 +354,7 @@ export class HandTracker {
   this.actionState.palmSize = palmSize || 0;
   this.actionState.lastSeenTime = this.lastSeenTime;
   this.actionState.chargeHeld = !!this.chargeHeld;
-  this.actionState.chargePending = !!this.chargePending;
+  this.actionState.chargePending = !!(this.chargePending && nowSecFloat <= this.chargePendingUntil);
 
   this.onResult && this.onResult({ fps: this.fps, state: this.state, confidence: this.stateConf, charge: isCharge, actionState: this.actionState });
 
