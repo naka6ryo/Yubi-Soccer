@@ -30,11 +30,11 @@ const CFG = {
   },
   charge: {
     // PIP 関節の角度しきい値 (rad)。angleBetween(PIP->MCP, PIP->DIP) がこの値未満なら曲がっていると判定
-    angleThresholdRad: 2.4,
+    angleThresholdRad: 3,
     // CHARGE を開始するまでのホールド時間（秒）
     holdSec: 0.1,
     // MCP（第1関節）の角度もしきい値として考慮する（angle at MCP between wrist->MCP and PIP->MCP）
-    mcpAngleThresholdRad: 2.6,
+    mcpAngleThresholdRad: 3,
   },
 };
 
@@ -88,11 +88,15 @@ export class HandTracker {
       runConf: 0,
       palmSize: 0,
       lastSeenTime: 0,
+      chargeHeld: false,
+      chargePending: false,
     };
     // CHARGE ホールド開始時刻（秒）。null の場合は未ホールド
     this.chargeStartTime = null;
   // CHARGE 後に次の非 NONE を KICK に変換するフラグ
   this.chargePending = false;
+  // CHARGE が holdSec を満たして確定したかを表す内部フラグ
+  this.chargeHeld = false;
   this.lastTriggerTime = 0;
   this.lastSeenTime = 0; // 最後に手を検出した時刻（sec）
   this.noHandCount = 0;  // 連続で検出できなかったフレーム数
@@ -279,38 +283,33 @@ export class HandTracker {
 
   // ジェスチャ分類（最新のバッファから） -- classify はメトリクスも返す
   const { state, confidence, tipSpeedPeak, tipForwardMin, runConf, palmSize } = this.classify(now / 1000);
-    const prevWasCharge = (this.state === 'CHARGE');
-    // CHARGE はホールド判定を導入して独立状態として扱う（NONE と共存させない）
+    // CHARGE 表示フラグ (isCharge) は HUD/actionState 用であり，
+    // 直接 this.state を書き換えない（RUN/NONE/KICK の判定に影響を与えない）
+    // ただし，CHARGE が所定時間保持された（chargeHeld）あとに解除されたら
+    // 次の非 NONE を KICK に変換する既存の挙動は維持する。
     const nowSecFloat = now / 1000;
-  if (isCharge) {
-      // ホールド開始時刻を設定
+    if (isCharge) {
       if (this.chargeStartTime === null) this.chargeStartTime = nowSecFloat;
       const held = (nowSecFloat - this.chargeStartTime) >= (CFG.charge.holdSec || 0.5);
-      if (held) {
-        this.state = 'CHARGE';
-        this.stateConf = 1.0;
-      } else {
-        // まだホールド中。状態は一時的に HOLD として NONE のままにしておく
-        this.state = 'NONE';
-        this.stateConf = 0;
-      }
+      if (held) this.chargeHeld = true;
     } else {
-      // CHARGE 抜けるとホールド開始時刻をリセット
+      // CHARGE が解除されたとき、hold が成立していたら次の非 NONE を KICK にするフラグを立てる
+      if (this.chargeHeld) {
+        this.chargePending = true;
+      }
+      this.chargeHeld = false;
       this.chargeStartTime = null;
-      this.state = state;
-      this.stateConf = confidence;
     }
 
-    // CHARGE から抜けた直後は次の非 NONE 状態を KICK に置き換える
-    if (prevWasCharge && !isCharge) {
-      this.chargePending = true;
-    }
+    // state は常に classify() の結果を使う
+    this.state = state;
+    this.stateConf = confidence;
 
+    // chargePending が立っていれば，次に state が非 NONE になった時点で KICK に上書きする
     if (this.chargePending && this.state !== 'NONE') {
       this.state = 'KICK';
       this.stateConf = 1.0;
       this.chargePending = false;
-      // 更新 actionState tip/confidence が KICK を反映するようにします
     }
   // 更新されたアクション状態を組み立てて onResult に渡す
   this.actionState.state = this.state;
@@ -323,6 +322,8 @@ export class HandTracker {
   this.actionState.runConf = runConf || 0;
   this.actionState.palmSize = palmSize || 0;
   this.actionState.lastSeenTime = this.lastSeenTime;
+  this.actionState.chargeHeld = !!this.chargeHeld;
+  this.actionState.chargePending = !!this.chargePending;
 
   this.onResult && this.onResult({ fps: this.fps, state: this.state, confidence: this.stateConf, charge: isCharge, actionState: this.actionState });
 
