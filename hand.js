@@ -101,6 +101,8 @@ export class HandTracker {
   this.chargePending = false;
   // chargePending が有効な最終時刻（秒）
   this.chargePendingUntil = 0;
+  // CHARGE→KICK で強制的に KICK にしたとき、その KICK を保持する最終時刻（秒）
+  this.kickHoldUntil = 0;
   // CHARGE が holdSec を満たして確定したかを表す内部フラグ
   this.chargeHeld = false;
   this.lastTriggerTime = 0;
@@ -310,8 +312,8 @@ export class HandTracker {
       // CHARGE が解除されたとき、hold が成立していたら次の非 NONE を KICK にするフラグを立てる
       if (this.chargeHeld) {
         this.chargePending = true;
-        // 0.3 秒間だけ有効にする
-        this.chargePendingUntil = nowSecFloat + 0.3;
+  // 1.0 秒間だけ有効にする
+  this.chargePendingUntil = nowSecFloat + 1.0;
       }
       this.chargeHeld = false;
       this.chargeStartTime = null;
@@ -337,9 +339,16 @@ export class HandTracker {
       } else if (this.state !== 'NONE') {
         this.state = 'KICK';
         this.stateConf = 1.0;
+        // CHARGE による強制 KICK が発生したので、この KICK を 1 秒間保持する
+        this.kickHoldUntil = nowSecFloat + 1.0;
         this.chargePending = false;
         this.chargePendingUntil = 0;
       }
+    }
+    // kickHoldUntil が有効なら KICK を維持する（他の状態より優先）
+    if (nowSecFloat <= (this.kickHoldUntil || 0)) {
+      this.state = 'KICK';
+      this.stateConf = 1.0;
     }
   // 更新されたアクション状態を組み立てて onResult に渡す
   this.actionState.state = this.state;
