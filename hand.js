@@ -357,11 +357,7 @@ export class HandTracker {
   ctx.fillStyle = 'rgba(200,220,255,0.95)';
   ctx.font = '12px system-ui, sans-serif';
   ctx.fillText(`STATE: ${this.state}`, 14, 54);
-    if (charge) {
-      ctx.fillStyle = 'rgba(255,160,0,0.95)';
-      ctx.font = '14px system-ui, sans-serif';
-      ctx.fillText('CHARGE', cssW - 90, 24);
-    }
+    // CHARGE 表示は UI 側で削除：何も描かない
     if (!hasLm) {
       ctx.fillStyle = 'rgba(255,255,255,0.9)';
       ctx.fillText('No hand', 80, 25);
