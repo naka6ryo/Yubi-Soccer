@@ -44,6 +44,8 @@ const CFG = {
   charge: {
     // PIP 関節の角度しきい値 (rad)。angleBetween(PIP->MCP, PIP->DIP) がこの値未満なら曲がっていると判定
     angleThresholdRad: 2.4,
+    // CHARGE を開始するまでのホールド時間（秒）
+    holdSec: 0.5,
   },
 };
 
@@ -98,6 +100,8 @@ export class HandTracker {
       palmSize: 0,
       lastSeenTime: 0,
     };
+    // CHARGE ホールド開始時刻（秒）。null の場合は未ホールド
+    this.chargeStartTime = null;
   this.lastTriggerTime = 0;
   this.lastSeenTime = 0; // 最後に手を検出した時刻（sec）
   this.noHandCount = 0;  // 連続で検出できなかったフレーム数
@@ -271,11 +275,23 @@ export class HandTracker {
 
   // ジェスチャ分類（最新のバッファから） -- classify はメトリクスも返す
   const { state, confidence, tipSpeedPeak, tipForwardMin, runConf, palmSize } = this.classify(now / 1000);
-    // CHARGE は独立状態として扱う（NONE と共存させない）
+    // CHARGE はホールド判定を導入して独立状態として扱う（NONE と共存させない）
+    const nowSecFloat = now / 1000;
     if (isCharge) {
-      this.state = 'CHARGE';
-      this.stateConf = 1.0;
+      // ホールド開始時刻を設定
+      if (this.chargeStartTime === null) this.chargeStartTime = nowSecFloat;
+      const held = (nowSecFloat - this.chargeStartTime) >= (CFG.charge.holdSec || 0.5);
+      if (held) {
+        this.state = 'CHARGE';
+        this.stateConf = 1.0;
+      } else {
+        // まだホールド中。状態は一時的に HOLD として NONE のままにしておく
+        this.state = 'NONE';
+        this.stateConf = 0;
+      }
     } else {
+      // CHARGE 抜けるとホールド開始時刻をリセット
+      this.chargeStartTime = null;
       this.state = state;
       this.stateConf = confidence;
     }
