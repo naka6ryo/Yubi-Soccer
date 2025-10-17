@@ -102,6 +102,8 @@ export class HandTracker {
     };
     // CHARGE ホールド開始時刻（秒）。null の場合は未ホールド
     this.chargeStartTime = null;
+  // CHARGE 後に次の非 NONE を KICK に変換するフラグ
+  this.chargePending = false;
   this.lastTriggerTime = 0;
   this.lastSeenTime = 0; // 最後に手を検出した時刻（sec）
   this.noHandCount = 0;  // 連続で検出できなかったフレーム数
@@ -275,9 +277,10 @@ export class HandTracker {
 
   // ジェスチャ分類（最新のバッファから） -- classify はメトリクスも返す
   const { state, confidence, tipSpeedPeak, tipForwardMin, runConf, palmSize } = this.classify(now / 1000);
+    const prevWasCharge = (this.state === 'CHARGE');
     // CHARGE はホールド判定を導入して独立状態として扱う（NONE と共存させない）
     const nowSecFloat = now / 1000;
-    if (isCharge) {
+  if (isCharge) {
       // ホールド開始時刻を設定
       if (this.chargeStartTime === null) this.chargeStartTime = nowSecFloat;
       const held = (nowSecFloat - this.chargeStartTime) >= (CFG.charge.holdSec || 0.5);
@@ -294,6 +297,18 @@ export class HandTracker {
       this.chargeStartTime = null;
       this.state = state;
       this.stateConf = confidence;
+    }
+
+    // CHARGE から抜けた直後は次の非 NONE 状態を KICK に置き換える
+    if (prevWasCharge && !isCharge) {
+      this.chargePending = true;
+    }
+
+    if (this.chargePending && this.state !== 'NONE') {
+      this.state = 'KICK';
+      this.stateConf = 1.0;
+      this.chargePending = false;
+      // 更新 actionState tip/confidence が KICK を反映するようにします
     }
   // 更新されたアクション状態を組み立てて onResult に渡す
   this.actionState.state = this.state;
