@@ -7,7 +7,7 @@ import { RingBuffer, MovingAvg, normalizedCrossCorrelation, angleBetween, diffSe
 const CFG = {
   inputTargetSize: 320, // 処理落ち時は 256 に下げる
   minFPSForHighRes: 26,
-  windowSec: 0.6, // RUN 相関窓
+  windowSec: 1, // RUN 相関窓
   debounceSec: 0.3,
   hysteresis: { on: 0.65, off: 0.45 },
   run: {
