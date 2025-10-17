@@ -26,7 +26,7 @@ const CFG = {
     // 前方向（カメラ方向）への z 速度の最小値 (normalized z units per sec)
     // MediaPipe の z はカメラに近づくと通常負の値になるため、
     // ここでは負方向の速度（値が小さくなる＝より負）を期待する。
-    minTipForwardZ: 0.3,
+    minTipForwardZ: 0.5,
   },
   charge: {
     // PIP 関節の角度しきい値 (rad)。angleBetween(PIP->MCP, PIP->DIP) がこの値未満なら曲がっていると判定
