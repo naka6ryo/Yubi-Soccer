@@ -30,11 +30,11 @@ const CFG = {
   },
   charge: {
     // PIP 関節の角度しきい値 (rad)。angleBetween(PIP->MCP, PIP->DIP) がこの値未満なら曲がっていると判定
-    angleThresholdRad: 1,
+    angleThresholdRad: 1.5,
     // CHARGE を開始するまでのホールド時間（秒）
     holdSec: 0.1,
     // MCP（第1関節）の角度もしきい値として考慮する（angle at MCP between wrist->MCP and PIP->MCP）
-    mcpAngleThresholdRad: 1,
+    mcpAngleThresholdRad: 1.5,
   },
 };
 
