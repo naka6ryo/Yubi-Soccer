@@ -298,12 +298,16 @@ export class HandTracker {
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.strokeStyle = 'rgba(255,255,255,0.25)';
     ctx.lineWidth = 1;
-    ctx.fillRect(8, 8, 140, 40);
-    ctx.strokeRect(8, 8, 140, 40);
+  ctx.fillRect(8, 8, 180, 56);
+  ctx.strokeRect(8, 8, 180, 56);
     ctx.fillStyle = '#fff';
     ctx.font = '12px system-ui, sans-serif';
     ctx.fillText(`MP: ${this.handLandmarker ? 'OK' : 'NG'}`, 14, 25);
-    ctx.fillText(`FPS: ${Math.round(fps)}`, 14, 40);
+  ctx.fillText(`FPS: ${Math.round(fps)}`, 14, 40);
+  // current state
+  ctx.fillStyle = 'rgba(200,220,255,0.95)';
+  ctx.font = '12px system-ui, sans-serif';
+  ctx.fillText(`STATE: ${this.state}`, 14, 54);
     if (charge) {
       ctx.fillStyle = 'rgba(255,160,0,0.95)';
       ctx.font = '14px system-ui, sans-serif';
