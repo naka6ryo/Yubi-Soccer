@@ -85,6 +85,19 @@ export class HandTracker {
     this.landmarksBuf = new RingBuffer(90); // 約3秒分@30fps
     this.state = 'NONE';
     this.stateConf = 0;
+    // ゲーム側へ渡す統一されたアクション状態オブジェクト
+    this.actionState = {
+      state: this.state,
+      confidence: this.stateConf,
+      charge: false,
+      fps: 0,
+      ts: this.lastTs / 1000,
+      tipSpeedPeak: 0,
+      tipForwardMin: 0,
+      runConf: 0,
+      palmSize: 0,
+      lastSeenTime: 0,
+    };
   this.lastTriggerTime = 0;
   this.lastSeenTime = 0; // 最後に手を検出した時刻（sec）
   this.noHandCount = 0;  // 連続で検出できなかったフレーム数
@@ -247,8 +260,8 @@ export class HandTracker {
       this.noHandCount++;
     }
 
-  // ジェスチャ分類（最新のバッファから）
-  const { state, confidence } = this.classify(now / 1000);
+  // ジェスチャ分類（最新のバッファから） -- classify はメトリクスも返す
+  const { state, confidence, tipSpeedPeak, tipForwardMin, runConf, palmSize } = this.classify(now / 1000);
     // CHARGE は独立状態として扱う（NONE と共存させない）
     if (isCharge) {
       this.state = 'CHARGE';
@@ -257,8 +270,19 @@ export class HandTracker {
       this.state = state;
       this.stateConf = confidence;
     }
+  // 更新されたアクション状態を組み立てて onResult に渡す
+  this.actionState.state = this.state;
+  this.actionState.confidence = this.stateConf;
+  this.actionState.charge = isCharge;
+  this.actionState.fps = this.fps;
+  this.actionState.ts = now / 1000;
+  this.actionState.tipSpeedPeak = tipSpeedPeak || 0;
+  this.actionState.tipForwardMin = tipForwardMin || 0;
+  this.actionState.runConf = runConf || 0;
+  this.actionState.palmSize = palmSize || 0;
+  this.actionState.lastSeenTime = this.lastSeenTime;
 
-  this.onResult && this.onResult({ fps: this.fps, state, confidence, charge: isCharge });
+  this.onResult && this.onResult({ fps: this.fps, state: this.state, confidence: this.stateConf, charge: isCharge, actionState: this.actionState });
 
   // デバッグ HUD 表示
   this.drawHUD(this.ctx, this.overlay, this.fps, !!normalizedLandmarks, isCharge);
@@ -482,6 +506,6 @@ export class HandTracker {
       }
     }
 
-    return { state: nextState, confidence: clamp(conf, 0, 1) };
+    return { state: nextState, confidence: clamp(conf, 0, 1), tipSpeedPeak, tipForwardMin, runConf, palmSize: palmCenters.length ? palmCenters[palmCenters.length-1].size : 0 };
   }
 }
