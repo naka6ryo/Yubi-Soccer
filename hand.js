@@ -68,6 +68,10 @@ export class HandTracker {
     this.running = false;
     this.lastTs = performance.now();
     this.fps = 0;
+  // 検出スロットル: ミリ秒単位。デフォルトは 15 FPS 相当
+  this.detectIntervalMs = 1000 / 15;
+  this.lastDetectTime = 0;
+  this.lastDetectResult = null;
 
     // 時系列バッファ
     this.landmarksBuf = new RingBuffer(90); // 約3秒分@30fps
@@ -117,12 +121,13 @@ export class HandTracker {
           } catch (_) { /* try next */ }
         }
         if (!modelPath) throw new Error('No accessible hand_landmarker.task');
+        // 軽量化: デフォルトで numHands=1 にして負荷を抑える
         this.handLandmarker = await HandLandmarker.createFromOptions(filesetResolver, {
           baseOptions: { modelAssetPath: modelPath },
-          numHands: 2,
+          numHands: 1,
           runningMode: 'VIDEO',
-          minHandDetectionConfidence: 0.3,
-          minHandPresenceConfidence: 0.3,
+          minHandDetectionConfidence: 0.35,
+          minHandPresenceConfidence: 0.35,
           minTrackingConfidence: 0.5,
         });
         console.info('[HandLandmarker] initialized with base:', base, 'model:', modelPath);
@@ -177,9 +182,22 @@ export class HandTracker {
       this.procCanvas.width = pw;
       this.procCanvas.height = ph;
       this.procCtx.drawImage(video, 0, 0, pw, ph);
-      try {
-        lmResult = await this.handLandmarker.detectForVideo(this.procCanvas, now);
-      } catch (_) { lmResult = null; }
+      // 検出はスロットルして実行。検出は遅延実行されるが、描画は直前の結果を使う。
+      const shouldDetect = (now - this.lastDetectTime) >= this.detectIntervalMs;
+      if (shouldDetect) {
+        try {
+          const res = await this.handLandmarker.detectForVideo(this.procCanvas, now);
+          this.lastDetectTime = now;
+          this.lastDetectResult = res;
+          lmResult = res;
+        } catch (e) {
+          // 検出失敗時は前回の結果を使用
+          lmResult = this.lastDetectResult;
+        }
+      } else {
+        // スロットル中はキャッシュされた結果を使う
+        lmResult = this.lastDetectResult;
+      }
     }
 
     const canvas = this.overlay;
