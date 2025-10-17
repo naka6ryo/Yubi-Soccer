@@ -101,10 +101,10 @@ export class HandTracker {
   this.chargePending = false;
   // chargePending が有効な最終時刻（秒）
   this.chargePendingUntil = 0;
-  // CHARGE→KICK で強制的に KICK にしたとき、その KICK を保持する最終時刻（秒）
-  this.kickHoldUntil = 0;
   // CHARGE が holdSec を満たして確定したかを表す内部フラグ
   this.chargeHeld = false;
+  // KICK を最低限保持するための有効期限（秒）
+  this.kickHoldUntil = 0;
   this.lastTriggerTime = 0;
   this.lastSeenTime = 0; // 最後に手を検出した時刻（sec）
   this.noHandCount = 0;  // 連続で検出できなかったフレーム数
@@ -321,12 +321,22 @@ export class HandTracker {
 
     // state は基本的には classify() の結果を使うが、
     // CHARGE が確定（hold 成立）している間は HUD/状態として 'CHARGE' を優先表示する
-    if (this.chargeHeld) {
-      this.state = 'CHARGE';
+    const desiredState = this.chargeHeld ? 'CHARGE' : state;
+    const desiredConf = this.chargeHeld ? 1.0 : confidence;
+
+    // 既に KICK 中であれば、kickHoldUntil を尊重して一定時間は KICK を継続する
+    if (this.state === 'KICK' && nowSecFloat <= (this.kickHoldUntil || 0)) {
+      // 維持: 何もしない（ただし表示確度は最大にしておく）
+      this.state = 'KICK';
       this.stateConf = 1.0;
+    } else if (desiredState === 'KICK' && this.state !== 'KICK') {
+      // 新たに KICK へ遷移した -> 保持期限を設定
+      this.state = 'KICK';
+      this.stateConf = desiredConf;
+      this.kickHoldUntil = nowSecFloat + 1.0;
     } else {
-      this.state = state;
-      this.stateConf = confidence;
+      this.state = desiredState;
+      this.stateConf = desiredConf;
     }
 
     // chargePending が立っていれば，次に state が非 NONE になった時点で KICK に上書きする
@@ -337,18 +347,13 @@ export class HandTracker {
         this.chargePending = false;
         this.chargePendingUntil = 0;
       } else if (this.state !== 'NONE') {
+        // 強制 KICK（chargePending）: KICK に上書きし、保持期限を設定
         this.state = 'KICK';
         this.stateConf = 1.0;
-        // CHARGE による強制 KICK が発生したので、この KICK を 1 秒間保持する
         this.kickHoldUntil = nowSecFloat + 1.0;
         this.chargePending = false;
         this.chargePendingUntil = 0;
       }
-    }
-    // kickHoldUntil が有効なら KICK を維持する（他の状態より優先）
-    if (nowSecFloat <= (this.kickHoldUntil || 0)) {
-      this.state = 'KICK';
-      this.stateConf = 1.0;
     }
   // 更新されたアクション状態を組み立てて onResult に渡す
   this.actionState.state = this.state;
