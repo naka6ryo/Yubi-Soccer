@@ -19,10 +19,10 @@ const CFG = {
     minTipSpeedPxPerSec: 200, // 甲から離れた領域での指先速度の下限（RUN 用）
   },
   kick: {
-    minAngVel: 5.0, // rad/s
-    minWristSpeed: 200.0, // px/s （10 px/frame @30fps 相当）
+    minAngVel: 10.0, // rad/s
+    minWristSpeed: 500.0, // px/s （10 px/frame @30fps 相当）
     // KICK は指先速度ピークのみで判定
-    minTipSpeedPxPerSec: 2000, // 指先速度による KICK しきい値
+    minTipSpeedPxPerSec: 1500, // 指先速度による KICK しきい値
     // 前方向（カメラ方向）への z 速度の最小値 (normalized z units per sec)
     // MediaPipe の z はカメラに近づくと通常負の値になるため、
     // ここでは負方向の速度（値が小さくなる＝より負）を期待する。
