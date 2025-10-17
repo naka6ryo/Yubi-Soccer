@@ -30,13 +30,15 @@ const CFG = {
   },
   charge: {
     // PIP 関節の角度しきい値 (rad)。angleBetween(PIP->MCP, PIP->DIP) がこの値未満なら曲がっていると判定
-    // ほとんど直線（π rad）に近い角度でも "曲がっている" と判定したいので
-    // 小さな屈曲も検出するために閾値を PI に近い値にする
-    angleThresholdRad: Math.PI * 0.99,
+    angleThresholdRad: 1.5,
     // CHARGE を開始するまでのホールド時間（秒）
     holdSec: 0.1,
     // MCP（第1関節）の角度もしきい値として考慮する（angle at MCP between wrist->MCP and PIP->MCP）
-    mcpAngleThresholdRad: Math.PI * 0.99,
+    mcpAngleThresholdRad: 1.5,
+    // KICK を抑止するための「わずかな曲がり」検出用しきい値（CHARGE の閾値は変更しない）
+    // 直立（約 pi rad = 3.14）に近い値で小さな曲がりを検出する。デフォルトは 2.9rad（約166°）。
+    anyBendAngleRad: 2.9,
+    anyBendMcpAngleRad: 2.9,
   },
 };
 
@@ -233,6 +235,8 @@ export class HandTracker {
 
   let normalizedLandmarks = null;
   let isCharge = false;
+  // isAnyBend: CHARGE より緩い閾値でわずかな曲がりを検出し、KICK を抑止するために使う
+  let isAnyBend = false;
   if (lmResult && lmResult.landmarks && lmResult.landmarks[0]) {
       // 0..1 正規化座標（鏡反転のみ適用、ピクセル変換は描画・分類時に行う）
       const hands = lmResult.landmarks.map(lm => this.normalizeLandmarks01(lm, this.mirror));
@@ -252,6 +256,8 @@ export class HandTracker {
   const bx = pDIP.x - pPIP.x; const by = pDIP.y - pPIP.y;
   const ang = angleBetween(ax, ay, bx, by);
   if (ang < CFG.charge.angleThresholdRad) isCharge = true;
+  // anyBend: PIP の角度が CHARGE より緩い閾値を下回れば "わずかに曲がっている" とみなす
+  if (ang < (CFG.charge.anyBendAngleRad || CFG.charge.angleThresholdRad)) isAnyBend = true;
   // MCP の角度 (MCP を中心に 手首->MCP と PIP->MCP の角度)
   const pWrist = this.project01ToPx(normalizedLandmarks[0], cssW, cssH, video.videoWidth, video.videoHeight);
   const mx1 = pWrist.x - pMCP.x; const my1 = pWrist.y - pMCP.y;
@@ -266,12 +272,14 @@ export class HandTracker {
   const bx2 = mDIP.x - mPIP.x; const by2 = mDIP.y - mPIP.y;
   const mang = angleBetween(mx, my, bx2, by2);
   if (mang < CFG.charge.angleThresholdRad) isCharge = true;
+  if (mang < (CFG.charge.anyBendAngleRad || CFG.charge.angleThresholdRad)) isAnyBend = true;
   // 中指の MCP 角度も評価
   const mWrist = this.project01ToPx(normalizedLandmarks[0], cssW, cssH, video.videoWidth, video.videoHeight);
   const mmx1 = mWrist.x - mMCP.x; const mmy1 = mWrist.y - mMCP.y;
   const mmx2 = mPIP.x - mMCP.x; const mmy2 = mPIP.y - mMCP.y;
   const mmcpAng = angleBetween(mmx1, mmy1, mmx2, mmy2);
   if (mmcpAng < (CFG.charge.mcpAngleThresholdRad || CFG.charge.angleThresholdRad)) isCharge = true;
+  if (mmcpAng < (CFG.charge.anyBendMcpAngleRad || CFG.charge.mcpAngleThresholdRad || CFG.charge.angleThresholdRad)) isAnyBend = true;
       } catch (e) {
         // ignore errors in charge calc
         isCharge = false;
@@ -285,7 +293,8 @@ export class HandTracker {
 
   // ジェスチャ分類（最新のバッファから） -- classify はメトリクスも返す
   // 引数 suppressKick を通じて、指が曲がっている場合は KICK 判定を抑止する
-  const { state, confidence, tipSpeedPeak, tipForwardMin, runConf, palmSize } = this.classify(now / 1000, isCharge);
+  // suppressKick フラグには、CHARGE の閾値はそのままに「わずかな曲がり」を示す isAnyBend を渡す
+  const { state, confidence, tipSpeedPeak, tipForwardMin, runConf, palmSize } = this.classify(now / 1000, isAnyBend);
     // CHARGE 表示フラグ (isCharge) は HUD/actionState 用であり，
     // 直接 this.state を書き換えない（RUN/NONE/KICK の判定に影響を与えない）
     // ただし，CHARGE が所定時間保持された（chargeHeld）あとに解除されたら
