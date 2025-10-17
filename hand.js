@@ -301,9 +301,15 @@ export class HandTracker {
       this.chargeStartTime = null;
     }
 
-    // state は常に classify() の結果を使う
-    this.state = state;
-    this.stateConf = confidence;
+    // state は基本的には classify() の結果を使うが、
+    // CHARGE が確定（hold 成立）している間は HUD/状態として 'CHARGE' を優先表示する
+    if (this.chargeHeld) {
+      this.state = 'CHARGE';
+      this.stateConf = 1.0;
+    } else {
+      this.state = state;
+      this.stateConf = confidence;
+    }
 
     // chargePending が立っていれば，次に state が非 NONE になった時点で KICK に上書きする
     if (this.chargePending && this.state !== 'NONE') {
