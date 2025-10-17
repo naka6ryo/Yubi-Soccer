@@ -93,7 +93,7 @@
       <canvas id="overlay"></canvas>
       <div id="ui">
         <div>FPS: <span id="fps">-</span></div>
-        <div>State: <span id="state">NONE</span></div>
+        <div>State: <span id="state">NONE</span> <span id="charge" style="color:#ffa000; font-weight:700; margin-left:8px;"></span></div>
         <div>Confidence: <span id="conf">0.00</span></div>
       </div>
       <div id="controls">
@@ -197,10 +197,12 @@
           video,
           overlay,
           mirror: mirrorToggle.checked,
-          onResult: ({ fps, state, confidence }) => {
+          onResult: ({ fps, state, confidence, charge }) => {
             fpsEl.textContent = fps.toFixed(0);
             stateEl.textContent = state;
             confEl.textContent = confidence.toFixed(2);
+            const chargeEl = document.getElementById('charge');
+            chargeEl.textContent = charge ? 'CHARGE' : '';
             if (state === 'RUN') setRunBoost(confidence);
             if (state !== lastState && state === 'KICK') {
               kickImpulse(confidence);
