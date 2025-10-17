@@ -7,16 +7,16 @@ import { RingBuffer, MovingAvg, normalizedCrossCorrelation, angleBetween, diffSe
 const CFG = {
   inputTargetSize: 320, // 処理落ち時は 256 に下げる
   minFPSForHighRes: 26,
-  windowSec: 1, // RUN 相関窓
+  windowSec: 0.7, // RUN 相関窓
   debounceSec: 0.3,
   hysteresis: { on: 0.65, off: 0.45 },
   run: {
     minAbsCorr: 0.5,
-    minSpeedAmp: 200, // px/s 相当（指振りの速度閾値）
+    minSpeedAmp: 300, // px/s 相当（指振りの速度閾値）
     // 代替: 手首の上下速度のゼロ交差から走動作（周期運動）を検出
     freqBandHz: [1.6, 4.0], // 許容する歩幅/走行の周波数帯（1/s）
     zeroXMinAmp: 80,       // px/s ゼロ交差判定に用いる最小速度（ノイズ抑制）
-    minTipSpeedPxPerSec: 400, // 甲から離れた領域での指先速度の下限（RUN 用）
+    minTipSpeedPxPerSec: 300, // 甲から離れた領域での指先速度の下限（RUN 用）
   },
   kick: {
     minAngVel: 10.0, // rad/s
