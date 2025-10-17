@@ -247,8 +247,8 @@ export class HandTracker {
       this.noHandCount++;
     }
 
-  // ジェスチャ分類（最新のバッファから）
-  const { state, confidence } = this.classify(now / 1000);
+  // ジェスチャ分類（最新のバッファから）。CHARGE の場合は RUN/KICK を出さない
+  const { state, confidence } = this.classify(now / 1000, isCharge);
     this.state = state;
     this.stateConf = confidence;
 
@@ -368,11 +368,13 @@ export class HandTracker {
     return { center: { x: cx, y: cy }, palmSize: Math.max(1, palmSize) };
   }
 
-  classify(nowSec) {
+  classify(nowSec, isCharge = false) {
     // 直近 windowSec のデータを抽出
     const windowLen = CFG.windowSec;
     const arr = this.landmarksBuf.toArray().filter((e) => nowSec - e.t <= windowLen);
     if (arr.length < 4) return { state: 'NONE', confidence: 0 };
+    // CHARGE 時は RUN/KICK を発生させない（即座に NONE を返す）
+    if (isCharge) return { state: 'NONE', confidence: 0 };
     // 最終観測が古い場合は NONE
     const lastT = arr[arr.length - 1].t;
     if (nowSec - lastT > 0.25) return { state: 'NONE', confidence: 0 };
