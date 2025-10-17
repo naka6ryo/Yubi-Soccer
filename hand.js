@@ -26,20 +26,7 @@ const CFG = {
     // 前方向（カメラ方向）への z 速度の最小値 (normalized z units per sec)
     // MediaPipe の z はカメラに近づくと通常負の値になるため、
     // ここでは負方向の速度（値が小さくなる＝より負）を期待する。
-    minTipForwardZ: 0.3,
-  },
-  joystick: {
-    // グーの手をジョイスティック化（左右）
-    deadzonePalmRatio: 0.5,  // デッドゾーン = palmSize * ratio
-    maxRangePalmRatio: 2.0,  // フルレンジ = palmSize * ratio（これ以上は±1にクランプ）
-    smoothAlpha: 0.25,       // 値のローパス係数（0..1）
-    resetDelaySec: 0.5,      // こぶし未検出になってから原点をリセットする遅延
-  },
-  fist: {
-    // グー判定: 指先(4,8,12,16,20)が掌中心に近い（palmSize 比）
-    // 緩め設定: 指先が掌中心からやや離れていてもグーとみなす
-    maxTipPalmRatio: 1.6, // 平均距離/掌サイズ がこの値以下ならグー寄り
-    minTipsClose: 3,      // 近いとみなす指の最小本数
+    minTipForwardZ: 0,
   },
   charge: {
     // PIP 関節の角度しきい値 (rad)。angleBetween(PIP->MCP, PIP->DIP) がこの値未満なら曲がっていると判定
