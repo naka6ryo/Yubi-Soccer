@@ -12,7 +12,7 @@ const CFG = {
   hysteresis: { on: 0.65, off: 0.45 },
   run: {
     minAbsCorr: 0.5,
-    minSpeedAmp: 200, // px/s 相当（指振りの速度閾値）
+    minSpeedAmp: 100, // px/s 相当（指振りの速度閾値）
     // 代替: 手首の上下速度のゼロ交差から走動作（周期運動）を検出
     freqBandHz: [1.6, 4.0], // 許容する歩幅/走行の周波数帯（1/s）
     zeroXMinAmp: 80,       // px/s ゼロ交差判定に用いる最小速度（ノイズ抑制）
