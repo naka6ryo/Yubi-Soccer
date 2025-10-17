@@ -1,0 +1,29 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+
+# Node/Web (念のため)
+node_modules/
+*.log
+
+# Local binaries / archives
+cloudflared.exe
+mediapipe-tasks-vision-*.tgz
+
+# Extracted package cache
+package/
+
+# Misc
+*.swp
+*.swo
+
+# Build/serve cache (将来追加される可能性)
+dist/
+build/
+.tmp/
+.cache/
