@@ -398,14 +398,39 @@ export class HandTracker {
     const tipAmp = rms(tipSpeed);
     const runConf = clamp((tipAmp - CFG.run.minTipSpeedPxPerSec) / CFG.run.minTipSpeedPxPerSec, 0, 1);
 
+    // CHARGE 判定: 最新フレームで人差し指先が掌に近く（内に曲げた）且つ速度が低ければ CHARGE
+    // palmCenters の最終要素を参照
+    let chargeScore = 0;
+    try {
+      const lastPalm = palmCenters[palmCenters.length - 1];
+      const lastTip = tip[tip.length - 1];
+      const dx = lastTip.x - lastPalm.x;
+      const dy = lastTip.y - lastPalm.y;
+      const dist = Math.hypot(dx, dy);
+      const chargeThresholdRatio = 0.7; // 掌サイズに対する閾値（この値より近ければ曲げているとみなす）
+      const thresh = chargeThresholdRatio * lastPalm.size;
+      // 近さからスコア（近いほど 1）
+      const proximity = clamp((thresh - dist) / Math.max(1, thresh), 0, 1);
+      // 速度が低いことも確認（まだキックしていない）
+      const lastTipSpeed = tipSpeed[tipSpeed.length - 1] || 0;
+      const maxStillSpeed = Math.max(50, CFG.kick.minTipSpeedPxPerSec * 0.15); // 安全マージン
+      const stillness = clamp(1 - (lastTipSpeed / maxStillSpeed), 0, 1);
+      chargeScore = proximity * stillness;
+    } catch (e) {
+      chargeScore = 0;
+    }
+
     // ヒステリシス + デバウンス
     const now = nowSec;
     const since = now - this.lastTriggerTime;
     let nextState = this.state;
     let conf = 0;
 
-    const kickOn = kickScore >= CFG.hysteresis.on;
-    const kickOff = kickScore <= CFG.hysteresis.off;
+  const kickOn = kickScore >= CFG.hysteresis.on;
+  const kickOff = kickScore <= CFG.hysteresis.off;
+  // CHARGE のヒステリシス判定
+  const chargeOn = chargeScore >= CFG.hysteresis.on;
+  const chargeOff = chargeScore <= CFG.hysteresis.off;
     const runOn = runConf >= CFG.hysteresis.on;
     const runOff = runConf <= CFG.hysteresis.off;
 
@@ -430,8 +455,22 @@ export class HandTracker {
         nextState = 'RUN';
         conf = runConf;
       }
-    } else { // NONE
+    } else if (this.state === 'CHARGE') {
+      // CHARGE からの遷移: キックが発生すれば KICK、走りの信頼度が上がれば RUN、CHARGE 条件が外れれば NONE
       if (kickOn && since > CFG.debounceSec) {
+        nextState = 'KICK'; conf = kickScore; this.lastTriggerTime = now;
+      } else if (runOn) {
+        nextState = 'RUN'; conf = runConf;
+      } else if (chargeOff) {
+        nextState = 'NONE'; conf = 0;
+      } else {
+        nextState = 'CHARGE'; conf = chargeScore;
+      }
+    } else { // NONE
+      // NONE 状態: CHARGE を優先して検出
+      if (chargeOn) {
+        nextState = 'CHARGE'; conf = chargeScore;
+      } else if (kickOn && since > CFG.debounceSec) {
         nextState = 'KICK';
         conf = kickScore;
         this.lastTriggerTime = now;
