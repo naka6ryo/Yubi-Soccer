@@ -22,7 +22,7 @@ const CFG = {
     minAngVel: 10.0, // rad/s
     minWristSpeed: 500.0, // px/s （10 px/frame @30fps 相当）
     // KICK は指先速度ピークのみで判定
-    minTipSpeedPxPerSec: 2500, // 指先速度による KICK しきい値
+    minTipSpeedPxPerSec: 2800, // 指先速度による KICK しきい値
     // 前方向（カメラ方向）への z 速度の最小値 (normalized z units per sec)
     // MediaPipe の z はカメラに近づくと通常負の値になるため、
     // ここでは負方向の速度（値が小さくなる＝より負）を期待する。
@@ -241,6 +241,7 @@ export class HandTracker {
       // 2D 描画（片手のみ表示）
       this.drawLandmarks(ctx, normalizedLandmarks, cssW, cssH, video.videoWidth, video.videoHeight);
       // CHARGE 判定: 人差し指の PIP(6) を基準に MCP(5) と DIP(7) との角度を測る
+      // さらに中指(PIP 10, MCP 9, DIP 11) も同様に CHARGE として扱う
       try {
         const pMCP = this.project01ToPx(normalizedLandmarks[5], cssW, cssH, video.videoWidth, video.videoHeight);
         const pPIP = this.project01ToPx(normalizedLandmarks[6], cssW, cssH, video.videoWidth, video.videoHeight);
@@ -249,6 +250,14 @@ export class HandTracker {
         const bx = pDIP.x - pPIP.x; const by = pDIP.y - pPIP.y;
         const ang = angleBetween(ax, ay, bx, by);
         if (ang < CFG.charge.angleThresholdRad) isCharge = true;
+        // 中指もチェック
+        const mMCP = this.project01ToPx(normalizedLandmarks[9], cssW, cssH, video.videoWidth, video.videoHeight);
+        const mPIP = this.project01ToPx(normalizedLandmarks[10], cssW, cssH, video.videoWidth, video.videoHeight);
+        const mDIP = this.project01ToPx(normalizedLandmarks[11], cssW, cssH, video.videoWidth, video.videoHeight);
+        const mx = mMCP.x - mPIP.x; const my = mMCP.y - mPIP.y;
+        const bx2 = mDIP.x - mPIP.x; const by2 = mDIP.y - mPIP.y;
+        const mang = angleBetween(mx, my, bx2, by2);
+        if (mang < CFG.charge.angleThresholdRad) isCharge = true;
       } catch (e) {
         // ignore errors in charge calc
         isCharge = false;
@@ -442,18 +451,29 @@ export class HandTracker {
 
     // RUN の周期測定は廃止（ユーザー要望）。
 
-    // 指先（人差し指 8）
-    const tip = arr.map((e) => ({ x: offX + e.lm[idx8].x * drawW, y: offY + e.lm[idx8].y * drawH }));
-  const tipZ = arr.map((e) => (e.lm[idx8].z ?? 0));
-    const tipVx = diffSeries(time, tip.map(p => p.x));
-    const tipVy = diffSeries(time, tip.map(p => p.y));
-    const tipSpeed = tipVx.map((v, i) => Math.hypot(v, tipVy[i]));
-  const tipVz = diffSeries(time, tipZ);
+    // 指先（人差し指 8 と 中指 12）
+    const tipIndex = arr.map((e) => ({ x: offX + e.lm[idx8].x * drawW, y: offY + e.lm[idx8].y * drawH }));
+  const tipIndexZ = arr.map((e) => (e.lm[idx8].z ?? 0));
+    const tipIndexVx = diffSeries(time, tipIndex.map(p => p.x));
+    const tipIndexVy = diffSeries(time, tipIndex.map(p => p.y));
+    const tipIndexSpeed = tipIndexVx.map((v, i) => Math.hypot(v, tipIndexVy[i]));
+  const tipIndexVz = diffSeries(time, tipIndexZ);
 
-    // KICK（簡素化）: 指先の速度ピークのみで判定
-    const tipSpeedPeak = Math.max(...tipSpeed);
-    // z 方向の速度は負（カメラへ近づく）を期待。最も負の値（min）を取り出す。
-    const tipForwardMin = Math.min(...tipVz);
+    const tipMid = arr.map((e) => ({ x: offX + e.lm[idx12].x * drawW, y: offY + e.lm[idx12].y * drawH }));
+  const tipMidZ = arr.map((e) => (e.lm[idx12].z ?? 0));
+    const tipMidVx = diffSeries(time, tipMid.map(p => p.x));
+    const tipMidVy = diffSeries(time, tipMid.map(p => p.y));
+    const tipMidSpeed = tipMidVx.map((v, i) => Math.hypot(v, tipMidVy[i]));
+  const tipMidVz = diffSeries(time, tipMidZ);
+
+    // combine: pick the maximum peak among index and middle
+    const tipSpeed = tipIndexSpeed.concat(tipMidSpeed);
+    const tipVz = tipIndexVz.concat(tipMidVz);
+    const tipSpeedPeak = Math.max(...tipIndexSpeed, ...tipMidSpeed);
+    const tipForwardMin = Math.min(...tipIndexVz, ...tipMidVz);
+
+  // KICK（簡素化）: 指先の速度ピークのみで判定
+  // tipSpeedPeak と tipForwardMin は index/middle 両方のピーク/最小値を既に計算済み
     let kickScore = 0;
     // 2D の速度ピークが閾値を超え、かつ前方への z 速度が閾値以上であることを要求する
     if (tipSpeedPeak > CFG.kick.minTipSpeedPxPerSec && tipForwardMin <= -CFG.kick.minTipForwardZ) {
