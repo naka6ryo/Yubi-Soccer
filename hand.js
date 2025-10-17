@@ -85,11 +85,7 @@ export class HandTracker {
     this.procCanvas = document.createElement('canvas');
     this.procCtx = this.procCanvas.getContext('2d', { willReadFrequently: true });
 
-    // ジョイスティック（グーの手）用状態
-    this.fistOrigin = null;     // {x,y} ピクセル座標
-    this.joystickX = 0;         // -1..1 左右
-    this.joystickActive = false;
-  this.lastFistSeenTs = 0;    // 最後にグーを検出した時刻（sec）
+    // ジョイスティック機能を削除して片手検出に簡素化
   }
 
   async init() {
@@ -220,53 +216,8 @@ export class HandTracker {
       normalizedLandmarks = hands[0];
       this.landmarksBuf.push({ t: now / 1000, lm: normalizedLandmarks });
       this.lastSeenTime = now / 1000;
-      // 2D 描画（1本目は通常、2本目があれば薄色）
+      // 2D 描画（片手のみ表示）
       this.drawLandmarks(ctx, normalizedLandmarks, cssW, cssH, video.videoWidth, video.videoHeight);
-      if (hands[1]) {
-        ctx.save(); ctx.globalAlpha = 0.6;
-        this.drawLandmarks(ctx, hands[1], cssW, cssH, video.videoWidth, video.videoHeight);
-        ctx.restore();
-      }
-
-      // グーの手を自動検出してジョイスティック値を更新（優先: 2本目、次点: 1本目）
-      let joyIdx = -1;
-      const candidates = hands[1] ? [1, 0] : [0];
-      for (const i of candidates) {
-        if (this.isFist(hands[i], cssW, cssH, video.videoWidth, video.videoHeight)) { joyIdx = i; break; }
-      }
-      if (joyIdx >= 0) {
-        const { center, palmSize } = this.getPalmCenterAndSize(hands[joyIdx], cssW, cssH, video.videoWidth, video.videoHeight);
-        // グー検出 → 最終検出時刻更新
-        this.lastFistSeenTs = now / 1000;
-        if (!this.fistOrigin) this.fistOrigin = { x: center.x, y: center.y };
-        const dx = center.x - this.fistOrigin.x;
-        const dead = CFG.joystick.deadzonePalmRatio * palmSize;
-        const full = CFG.joystick.maxRangePalmRatio * palmSize;
-        let xRaw = 0;
-        if (Math.abs(dx) > dead) {
-          const sign = Math.sign(dx);
-          const mag = Math.min(1, (Math.abs(dx) - dead) / Math.max(1, (full - dead)));
-          xRaw = sign * mag;
-        }
-        this.joystickX = lerp(this.joystickX, xRaw, CFG.joystick.smoothAlpha);
-        this.joystickActive = true;
-      } else {
-        // グー未検出 → ラベルは即座に通常表示へ。原点は 0.5s 経過でリセット。
-        const nowSec = now / 1000;
-        this.joystickActive = false; // HUD ラベルは非アクティブ
-        if (this.lastFistSeenTs > 0 && (nowSec - this.lastFistSeenTs) >= CFG.joystick.resetDelaySec) {
-          this.fistOrigin = null; // 原点リセット
-        }
-        // 値自体は徐々に 0 へ収束
-        this.joystickX = lerp(this.joystickX, 0, CFG.joystick.smoothAlpha);
-      }
-      // HUD に常時出す（FIST ラベルはアクティブ時）
-      ctx.save();
-      ctx.fillStyle = this.joystickActive ? 'rgba(255,200,0,0.95)' : 'rgba(255,255,255,0.75)';
-      ctx.font = '14px system-ui, sans-serif';
-      const label = this.joystickActive ? 'FIST JS' : 'JS';
-      ctx.fillText(`${label}: ${this.joystickX.toFixed(2)}`, cssW - 160, 24);
-      ctx.restore();
       this.noHandCount = 0;
     } else {
       // 手が見えない → NONE へ収束
@@ -366,15 +317,7 @@ export class HandTracker {
   }
 
   // もう一方の手が "グー" かを判定
-  isFist(lm01, cssW, cssH, videoW, videoH) {
-    const { center, palmSize } = this.getPalmCenterAndSize(lm01, cssW, cssH, videoW, videoH);
-
-    // 指先
-    const P = (i) => this.project01ToPx(lm01[i], cssW, cssH, videoW, videoH);
-    const tips = [4, 8, 12, 16, 20].map(P);
-    const closeCount = tips.reduce((cnt, p) => cnt + (Math.hypot(p.x - center.x, p.y - center.y) <= CFG.fist.maxTipPalmRatio * palmSize ? 1 : 0), 0);
-    return closeCount >= CFG.fist.minTipsClose;
-  }
+  // isFist removed — joystick functionality disabled
 
   // 0..1 正規化座標を画面ピクセルへ投影（object-fit: cover 前提）
   project01ToPx(pt01, cssW, cssH, videoW, videoH) {
