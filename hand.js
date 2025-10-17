@@ -12,11 +12,11 @@ const CFG = {
   hysteresis: { on: 0.65, off: 0.45 },
   run: {
     minAbsCorr: 0.5,
-    minSpeedAmp: 100, // px/s 相当（指振りの速度閾値）
+    minSpeedAmp: 150, // px/s 相当（指振りの速度閾値）
     // 代替: 手首の上下速度のゼロ交差から走動作（周期運動）を検出
     freqBandHz: [1.6, 4.0], // 許容する歩幅/走行の周波数帯（1/s）
     zeroXMinAmp: 80,       // px/s ゼロ交差判定に用いる最小速度（ノイズ抑制）
-    minTipSpeedPxPerSec: 100, // 甲から離れた領域での指先速度の下限（RUN 用）
+    minTipSpeedPxPerSec: 150, // 甲から離れた領域での指先速度の下限（RUN 用）
   },
   kick: {
     minAngVel: 10.0, // rad/s
@@ -282,7 +282,8 @@ export class HandTracker {
     }
 
   // ジェスチャ分類（最新のバッファから） -- classify はメトリクスも返す
-  const { state, confidence, tipSpeedPeak, tipForwardMin, runConf, palmSize } = this.classify(now / 1000);
+  // 引数 suppressKick を通じて、指が曲がっている場合は KICK 判定を抑止する
+  const { state, confidence, tipSpeedPeak, tipForwardMin, runConf, palmSize } = this.classify(now / 1000, isCharge);
     // CHARGE 表示フラグ (isCharge) は HUD/actionState 用であり，
     // 直接 this.state を書き換えない（RUN/NONE/KICK の判定に影響を与えない）
     // ただし，CHARGE が所定時間保持された（chargeHeld）あとに解除されたら
@@ -321,6 +322,7 @@ export class HandTracker {
   this.actionState.state = this.state;
   this.actionState.confidence = this.stateConf;
   this.actionState.charge = isCharge;
+  this.actionState.bent = !!isCharge;
   this.actionState.fps = this.fps;
   this.actionState.ts = now / 1000;
   this.actionState.tipSpeedPeak = tipSpeedPeak || 0;
@@ -447,8 +449,7 @@ export class HandTracker {
     return { center: { x: cx, y: cy }, palmSize: Math.max(1, palmSize) };
   }
 
-  classify(nowSec) {
-    // 直近 windowSec のデータを抽出
+  classify(nowSec, suppressKick = false) {
     const windowLen = CFG.windowSec;
     const arr = this.landmarksBuf.toArray().filter((e) => nowSec - e.t <= windowLen);
     if (arr.length < 4) return { state: 'NONE', confidence: 0 };
@@ -511,9 +512,12 @@ export class HandTracker {
   // KICK（簡素化）: 指先の速度ピークのみで判定
   // tipSpeedPeak と tipForwardMin は index/middle 両方のピーク/最小値を既に計算済み
     let kickScore = 0;
-    // 2D の速度ピークが閾値を超え、かつ前方への z 速度が閾値以上であることを要求する
-    if (tipSpeedPeak > CFG.kick.minTipSpeedPxPerSec && tipForwardMin <= -CFG.kick.minTipForwardZ) {
-      kickScore = clamp((tipSpeedPeak - CFG.kick.minTipSpeedPxPerSec) / CFG.kick.minTipSpeedPxPerSec, 0, 1);
+    // suppressKick が指定されている場合は KICK 判定を抑止する
+    if (!suppressKick) {
+      // 2D の速度ピークが閾値を超え、かつ前方への z 速度が閾値以上であることを要求する
+      if (tipSpeedPeak > CFG.kick.minTipSpeedPxPerSec && tipForwardMin <= -CFG.kick.minTipForwardZ) {
+        kickScore = clamp((tipSpeedPeak - CFG.kick.minTipSpeedPxPerSec) / CFG.kick.minTipSpeedPxPerSec, 0, 1);
+      }
     }
 
     // RUN（簡素化）: KICK でない限りすべて RUN。加速用の confidence は指先速度RMSから算出。
