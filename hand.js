@@ -23,6 +23,10 @@ const CFG = {
     minWristSpeed: 500.0, // px/s （10 px/frame @30fps 相当）
     // KICK は指先速度ピークのみで判定
     minTipSpeedPxPerSec: 2000, // 指先速度による KICK しきい値
+    // 前方向（カメラ方向）への z 速度の最小値 (normalized z units per sec)
+    // MediaPipe の z はカメラに近づくと通常負の値になるため、
+    // ここでは負方向の速度（値が小さくなる＝より負）を期待する。
+    minTipForwardZ: 0.3,
   },
   joystick: {
     // グーの手をジョイスティック化（左右）
@@ -406,14 +410,19 @@ export class HandTracker {
 
     // 指先（人差し指 8）
     const tip = arr.map((e) => ({ x: offX + e.lm[idx8].x * drawW, y: offY + e.lm[idx8].y * drawH }));
+  const tipZ = arr.map((e) => (e.lm[idx8].z ?? 0));
     const tipVx = diffSeries(time, tip.map(p => p.x));
     const tipVy = diffSeries(time, tip.map(p => p.y));
     const tipSpeed = tipVx.map((v, i) => Math.hypot(v, tipVy[i]));
+  const tipVz = diffSeries(time, tipZ);
 
     // KICK（簡素化）: 指先の速度ピークのみで判定
     const tipSpeedPeak = Math.max(...tipSpeed);
+    // z 方向の速度は負（カメラへ近づく）を期待。最も負の値（min）を取り出す。
+    const tipForwardMin = Math.min(...tipVz);
     let kickScore = 0;
-    if (tipSpeedPeak > CFG.kick.minTipSpeedPxPerSec) {
+    // 2D の速度ピークが閾値を超え、かつ前方への z 速度が閾値以上であることを要求する
+    if (tipSpeedPeak > CFG.kick.minTipSpeedPxPerSec && tipForwardMin <= -CFG.kick.minTipForwardZ) {
       kickScore = clamp((tipSpeedPeak - CFG.kick.minTipSpeedPxPerSec) / CFG.kick.minTipSpeedPxPerSec, 0, 1);
     }
 
