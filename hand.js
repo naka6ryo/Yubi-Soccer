@@ -12,15 +12,15 @@ const CFG = {
   hysteresis: { on: 0.65, off: 0.45 },
   run: {
     minAbsCorr: 0.5,
-    minSpeedAmp: 300, // px/s 相当（指振りの速度閾値）
+    minSpeedAmp: 200, // px/s 相当（指振りの速度閾値）
     // 代替: 手首の上下速度のゼロ交差から走動作（周期運動）を検出
     freqBandHz: [1.6, 4.0], // 許容する歩幅/走行の周波数帯（1/s）
     zeroXMinAmp: 80,       // px/s ゼロ交差判定に用いる最小速度（ノイズ抑制）
-    minTipSpeedPxPerSec: 700, // 甲から離れた領域での指先速度の下限（RUN 用）
+    minTipSpeedPxPerSec: 400, // 甲から離れた領域での指先速度の下限（RUN 用）
   },
   kick: {
-    minAngVel: 5.0, // rad/s
-    minWristSpeed: 300.0, // px/s （10 px/frame @30fps 相当）
+    minAngVel: 10.0, // rad/s
+    minWristSpeed: 500.0, // px/s （10 px/frame @30fps 相当）
     // KICK は指先速度ピークのみで判定
     minTipSpeedPxPerSec: 3000, // 指先速度による KICK しきい値
   },
@@ -33,8 +33,9 @@ const CFG = {
   },
   fist: {
     // グー判定: 指先(4,8,12,16,20)が掌中心に近い（palmSize 比）
-    maxTipPalmRatio: 1.0, // 平均距離/掌サイズ がこの値以下ならグー寄り
-    minTipsClose: 4,      // 近いとみなす指の最小本数
+    // 緩め設定: 指先が掌中心からやや離れていてもグーとみなす
+    maxTipPalmRatio: 1.6, // 平均距離/掌サイズ がこの値以下ならグー寄り
+    minTipsClose: 3,      // 近いとみなす指の最小本数
   },
 };
 
