@@ -22,7 +22,7 @@ const CFG = {
     minAngVel: 10.0, // rad/s
     minWristSpeed: 500.0, // px/s （10 px/frame @30fps 相当）
     // KICK は指先速度ピークのみで判定
-    minTipSpeedPxPerSec: 3000, // 指先速度による KICK しきい値
+    minTipSpeedPxPerSec: 2000, // 指先速度による KICK しきい値
   },
   joystick: {
     // グーの手をジョイスティック化（左右）
