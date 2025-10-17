@@ -28,24 +28,13 @@ const CFG = {
     // ここでは負方向の速度（値が小さくなる＝より負）を期待する。
     minTipForwardZ: 0.3,
   },
-  joystick: {
-    // グーの手をジョイスティック化（左右）
-    deadzonePalmRatio: 0.5,  // デッドゾーン = palmSize * ratio
-    maxRangePalmRatio: 2.0,  // フルレンジ = palmSize * ratio（これ以上は±1にクランプ）
-    smoothAlpha: 0.25,       // 値のローパス係数（0..1）
-    resetDelaySec: 0.5,      // こぶし未検出になってから原点をリセットする遅延
-  },
-  fist: {
-    // グー判定: 指先(4,8,12,16,20)が掌中心に近い（palmSize 比）
-    // 緩め設定: 指先が掌中心からやや離れていてもグーとみなす
-    maxTipPalmRatio: 1.6, // 平均距離/掌サイズ がこの値以下ならグー寄り
-    minTipsClose: 3,      // 近いとみなす指の最小本数
-  },
   charge: {
     // PIP 関節の角度しきい値 (rad)。angleBetween(PIP->MCP, PIP->DIP) がこの値未満なら曲がっていると判定
     angleThresholdRad: 2.4,
     // CHARGE を開始するまでのホールド時間（秒）
-    holdSec: 0.5,
+    holdSec: 0.1,
+    // MCP（第1関節）の角度もしきい値として考慮する（angle at MCP between wrist->MCP and PIP->MCP）
+    mcpAngleThresholdRad: 2.6,
   },
 };
 
@@ -249,21 +238,34 @@ export class HandTracker {
       // CHARGE 判定: 人差し指の PIP(6) を基準に MCP(5) と DIP(7) との角度を測る
       // さらに中指(PIP 10, MCP 9, DIP 11) も同様に CHARGE として扱う
       try {
-        const pMCP = this.project01ToPx(normalizedLandmarks[5], cssW, cssH, video.videoWidth, video.videoHeight);
-        const pPIP = this.project01ToPx(normalizedLandmarks[6], cssW, cssH, video.videoWidth, video.videoHeight);
-        const pDIP = this.project01ToPx(normalizedLandmarks[7], cssW, cssH, video.videoWidth, video.videoHeight);
-        const ax = pMCP.x - pPIP.x; const ay = pMCP.y - pPIP.y;
-        const bx = pDIP.x - pPIP.x; const by = pDIP.y - pPIP.y;
-        const ang = angleBetween(ax, ay, bx, by);
-        if (ang < CFG.charge.angleThresholdRad) isCharge = true;
+  const pMCP = this.project01ToPx(normalizedLandmarks[5], cssW, cssH, video.videoWidth, video.videoHeight);
+  const pPIP = this.project01ToPx(normalizedLandmarks[6], cssW, cssH, video.videoWidth, video.videoHeight);
+  const pDIP = this.project01ToPx(normalizedLandmarks[7], cssW, cssH, video.videoWidth, video.videoHeight);
+  // PIP の角度 (PIP を中心に MCP->PIP と DIP->PIP の角度)
+  const ax = pMCP.x - pPIP.x; const ay = pMCP.y - pPIP.y;
+  const bx = pDIP.x - pPIP.x; const by = pDIP.y - pPIP.y;
+  const ang = angleBetween(ax, ay, bx, by);
+  if (ang < CFG.charge.angleThresholdRad) isCharge = true;
+  // MCP の角度 (MCP を中心に 手首->MCP と PIP->MCP の角度)
+  const pWrist = this.project01ToPx(normalizedLandmarks[0], cssW, cssH, video.videoWidth, video.videoHeight);
+  const mx1 = pWrist.x - pMCP.x; const my1 = pWrist.y - pMCP.y;
+  const mx2 = pPIP.x - pMCP.x; const my2 = pPIP.y - pMCP.y;
+  const mcpAng = angleBetween(mx1, my1, mx2, my2);
+  if (mcpAng < (CFG.charge.mcpAngleThresholdRad || CFG.charge.angleThresholdRad)) isCharge = true;
         // 中指もチェック
-        const mMCP = this.project01ToPx(normalizedLandmarks[9], cssW, cssH, video.videoWidth, video.videoHeight);
-        const mPIP = this.project01ToPx(normalizedLandmarks[10], cssW, cssH, video.videoWidth, video.videoHeight);
-        const mDIP = this.project01ToPx(normalizedLandmarks[11], cssW, cssH, video.videoWidth, video.videoHeight);
-        const mx = mMCP.x - mPIP.x; const my = mMCP.y - mPIP.y;
-        const bx2 = mDIP.x - mPIP.x; const by2 = mDIP.y - mPIP.y;
-        const mang = angleBetween(mx, my, bx2, by2);
-        if (mang < CFG.charge.angleThresholdRad) isCharge = true;
+  const mMCP = this.project01ToPx(normalizedLandmarks[9], cssW, cssH, video.videoWidth, video.videoHeight);
+  const mPIP = this.project01ToPx(normalizedLandmarks[10], cssW, cssH, video.videoWidth, video.videoHeight);
+  const mDIP = this.project01ToPx(normalizedLandmarks[11], cssW, cssH, video.videoWidth, video.videoHeight);
+  const mx = mMCP.x - mPIP.x; const my = mMCP.y - mPIP.y;
+  const bx2 = mDIP.x - mPIP.x; const by2 = mDIP.y - mPIP.y;
+  const mang = angleBetween(mx, my, bx2, by2);
+  if (mang < CFG.charge.angleThresholdRad) isCharge = true;
+  // 中指の MCP 角度も評価
+  const mWrist = this.project01ToPx(normalizedLandmarks[0], cssW, cssH, video.videoWidth, video.videoHeight);
+  const mmx1 = mWrist.x - mMCP.x; const mmy1 = mWrist.y - mMCP.y;
+  const mmx2 = mPIP.x - mMCP.x; const mmy2 = mPIP.y - mMCP.y;
+  const mmcpAng = angleBetween(mmx1, mmy1, mmx2, mmy2);
+  if (mmcpAng < (CFG.charge.mcpAngleThresholdRad || CFG.charge.angleThresholdRad)) isCharge = true;
       } catch (e) {
         // ignore errors in charge calc
         isCharge = false;
