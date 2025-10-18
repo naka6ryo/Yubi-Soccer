@@ -12,17 +12,30 @@ const CFG = {
   hysteresis: { on: 0.65, off: 0.45 },
   run: {
     minAbsCorr: 0.5,
-    minSpeedAmp: 300, // px/s 相当（指振りの速度閾値）
+    minSpeedAmp: 200, // px/s 相当（指振りの速度閾値）
     // 代替: 手首の上下速度のゼロ交差から走動作（周期運動）を検出
     freqBandHz: [1.6, 4.0], // 許容する歩幅/走行の周波数帯（1/s）
     zeroXMinAmp: 80,       // px/s ゼロ交差判定に用いる最小速度（ノイズ抑制）
-    minTipSpeedPxPerSec: 700, // 甲から離れた領域での指先速度の下限（RUN 用）
+    minTipSpeedPxPerSec: 400, // 甲から離れた領域での指先速度の下限（RUN 用）
   },
   kick: {
-    minAngVel: 5.0, // rad/s
-    minWristSpeed: 300.0, // px/s （10 px/frame @30fps 相当）
+    minAngVel: 10.0, // rad/s
+    minWristSpeed: 500.0, // px/s （10 px/frame @30fps 相当）
     // KICK は指先速度ピークのみで判定
     minTipSpeedPxPerSec: 3000, // 指先速度による KICK しきい値
+  },
+  joystick: {
+    // グーの手をジョイスティック化（左右）
+    deadzonePalmRatio: 0.5,  // デッドゾーン = palmSize * ratio
+    maxRangePalmRatio: 2.0,  // フルレンジ = palmSize * ratio（これ以上は±1にクランプ）
+    smoothAlpha: 0.25,       // 値のローパス係数（0..1）
+    resetDelaySec: 0.5,      // こぶし未検出になってから原点をリセットする遅延
+  },
+  fist: {
+    // グー判定: 指先(4,8,12,16,20)が掌中心に近い（palmSize 比）
+    // 緩め設定: 指先が掌中心からやや離れていてもグーとみなす
+    maxTipPalmRatio: 1.6, // 平均距離/掌サイズ がこの値以下ならグー寄り
+    minTipsClose: 3,      // 近いとみなす指の最小本数
   },
 };
 
@@ -55,6 +68,10 @@ export class HandTracker {
     this.running = false;
     this.lastTs = performance.now();
     this.fps = 0;
+  // 検出スロットル: ミリ秒単位。デフォルトは 15 FPS 相当
+  this.detectIntervalMs = 1000 / 15;
+  this.lastDetectTime = 0;
+  this.lastDetectResult = null;
 
     // 時系列バッファ
     this.landmarksBuf = new RingBuffer(90); // 約3秒分@30fps
@@ -67,6 +84,12 @@ export class HandTracker {
     // 推論入力用のオフスクリーン Canvas
     this.procCanvas = document.createElement('canvas');
     this.procCtx = this.procCanvas.getContext('2d', { willReadFrequently: true });
+
+    // ジョイスティック（グーの手）用状態
+    this.fistOrigin = null;     // {x,y} ピクセル座標
+    this.joystickX = 0;         // -1..1 左右
+    this.joystickActive = false;
+  this.lastFistSeenTs = 0;    // 最後にグーを検出した時刻（sec）
   }
 
   async init() {
@@ -98,12 +121,13 @@ export class HandTracker {
           } catch (_) { /* try next */ }
         }
         if (!modelPath) throw new Error('No accessible hand_landmarker.task');
+        // 軽量化: デフォルトで numHands=1 にして負荷を抑える
         this.handLandmarker = await HandLandmarker.createFromOptions(filesetResolver, {
           baseOptions: { modelAssetPath: modelPath },
           numHands: 1,
           runningMode: 'VIDEO',
-          minHandDetectionConfidence: 0.3,
-          minHandPresenceConfidence: 0.3,
+          minHandDetectionConfidence: 0.35,
+          minHandPresenceConfidence: 0.35,
           minTrackingConfidence: 0.5,
         });
         console.info('[HandLandmarker] initialized with base:', base, 'model:', modelPath);
@@ -158,9 +182,22 @@ export class HandTracker {
       this.procCanvas.width = pw;
       this.procCanvas.height = ph;
       this.procCtx.drawImage(video, 0, 0, pw, ph);
-      try {
-        lmResult = await this.handLandmarker.detectForVideo(this.procCanvas, now);
-      } catch (_) { lmResult = null; }
+      // 検出はスロットルして実行。検出は遅延実行されるが、描画は直前の結果を使う。
+      const shouldDetect = (now - this.lastDetectTime) >= this.detectIntervalMs;
+      if (shouldDetect) {
+        try {
+          const res = await this.handLandmarker.detectForVideo(this.procCanvas, now);
+          this.lastDetectTime = now;
+          this.lastDetectResult = res;
+          lmResult = res;
+        } catch (e) {
+          // 検出失敗時は前回の結果を使用
+          lmResult = this.lastDetectResult;
+        }
+      } else {
+        // スロットル中はキャッシュされた結果を使う
+        lmResult = this.lastDetectResult;
+      }
     }
 
     const canvas = this.overlay;
@@ -179,11 +216,57 @@ export class HandTracker {
     let normalizedLandmarks = null;
   if (lmResult && lmResult.landmarks && lmResult.landmarks[0]) {
       // 0..1 正規化座標（鏡反転のみ適用、ピクセル変換は描画・分類時に行う）
-      normalizedLandmarks = this.normalizeLandmarks01(lmResult.landmarks[0], this.mirror);
+      const hands = lmResult.landmarks.map(lm => this.normalizeLandmarks01(lm, this.mirror));
+      normalizedLandmarks = hands[0];
       this.landmarksBuf.push({ t: now / 1000, lm: normalizedLandmarks });
       this.lastSeenTime = now / 1000;
-      // 2D 描画
+      // 2D 描画（1本目は通常、2本目があれば薄色）
       this.drawLandmarks(ctx, normalizedLandmarks, cssW, cssH, video.videoWidth, video.videoHeight);
+      if (hands[1]) {
+        ctx.save(); ctx.globalAlpha = 0.6;
+        this.drawLandmarks(ctx, hands[1], cssW, cssH, video.videoWidth, video.videoHeight);
+        ctx.restore();
+      }
+
+      // グーの手を自動検出してジョイスティック値を更新（優先: 2本目、次点: 1本目）
+      let joyIdx = -1;
+      const candidates = hands[1] ? [1, 0] : [0];
+      for (const i of candidates) {
+        if (this.isFist(hands[i], cssW, cssH, video.videoWidth, video.videoHeight)) { joyIdx = i; break; }
+      }
+      if (joyIdx >= 0) {
+        const { center, palmSize } = this.getPalmCenterAndSize(hands[joyIdx], cssW, cssH, video.videoWidth, video.videoHeight);
+        // グー検出 → 最終検出時刻更新
+        this.lastFistSeenTs = now / 1000;
+        if (!this.fistOrigin) this.fistOrigin = { x: center.x, y: center.y };
+        const dx = center.x - this.fistOrigin.x;
+        const dead = CFG.joystick.deadzonePalmRatio * palmSize;
+        const full = CFG.joystick.maxRangePalmRatio * palmSize;
+        let xRaw = 0;
+        if (Math.abs(dx) > dead) {
+          const sign = Math.sign(dx);
+          const mag = Math.min(1, (Math.abs(dx) - dead) / Math.max(1, (full - dead)));
+          xRaw = sign * mag;
+        }
+        this.joystickX = lerp(this.joystickX, xRaw, CFG.joystick.smoothAlpha);
+        this.joystickActive = true;
+      } else {
+        // グー未検出 → ラベルは即座に通常表示へ。原点は 0.5s 経過でリセット。
+        const nowSec = now / 1000;
+        this.joystickActive = false; // HUD ラベルは非アクティブ
+        if (this.lastFistSeenTs > 0 && (nowSec - this.lastFistSeenTs) >= CFG.joystick.resetDelaySec) {
+          this.fistOrigin = null; // 原点リセット
+        }
+        // 値自体は徐々に 0 へ収束
+        this.joystickX = lerp(this.joystickX, 0, CFG.joystick.smoothAlpha);
+      }
+      // HUD に常時出す（FIST ラベルはアクティブ時）
+      ctx.save();
+      ctx.fillStyle = this.joystickActive ? 'rgba(255,200,0,0.95)' : 'rgba(255,255,255,0.75)';
+      ctx.font = '14px system-ui, sans-serif';
+      const label = this.joystickActive ? 'FIST JS' : 'JS';
+      ctx.fillText(`${label}: ${this.joystickX.toFixed(2)}`, cssW - 160, 24);
+      ctx.restore();
       this.noHandCount = 0;
     } else {
       // 手が見えない → NONE へ収束
@@ -280,6 +363,39 @@ export class HandTracker {
       ctx.fillText('No hand detected', 10, cssH - 12);
     }
     ctx.restore();
+  }
+
+  // もう一方の手が "グー" かを判定
+  isFist(lm01, cssW, cssH, videoW, videoH) {
+    const { center, palmSize } = this.getPalmCenterAndSize(lm01, cssW, cssH, videoW, videoH);
+
+    // 指先
+    const P = (i) => this.project01ToPx(lm01[i], cssW, cssH, videoW, videoH);
+    const tips = [4, 8, 12, 16, 20].map(P);
+    const closeCount = tips.reduce((cnt, p) => cnt + (Math.hypot(p.x - center.x, p.y - center.y) <= CFG.fist.maxTipPalmRatio * palmSize ? 1 : 0), 0);
+    return closeCount >= CFG.fist.minTipsClose;
+  }
+
+  // 0..1 正規化座標を画面ピクセルへ投影（object-fit: cover 前提）
+  project01ToPx(pt01, cssW, cssH, videoW, videoH) {
+    const aspectV = videoW / Math.max(1, videoH);
+    const aspectC = cssW / Math.max(1, cssH);
+    const s = aspectC >= aspectV ? (cssW / Math.max(1, videoW)) : (cssH / Math.max(1, videoH));
+    const drawW = videoW * s;
+    const drawH = videoH * s;
+    const offX = (cssW - drawW) / 2;
+    const offY = (cssH - drawH) / 2;
+    return { x: offX + pt01.x * drawW, y: offY + pt01.y * drawH };
+  }
+
+  // 掌中心とサイズ（px）を取得
+  getPalmCenterAndSize(lm01, cssW, cssH, videoW, videoH) {
+    const idx = [0, 5, 9, 13, 17];
+    const pts = idx.map(i => this.project01ToPx(lm01[i], cssW, cssH, videoW, videoH));
+    const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+    const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+    const palmSize = pts.map(p => Math.hypot(p.x - cx, p.y - cy)).reduce((s, v) => s + v, 0) / pts.length;
+    return { center: { x: cx, y: cy }, palmSize: Math.max(1, palmSize) };
   }
 
   classify(nowSec) {

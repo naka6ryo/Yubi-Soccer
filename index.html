@@ -116,7 +116,8 @@
     </div>
 
     <script type="module">
-      import { setupThree, updatePhysics, setRunBoost, kickImpulse, resizeRendererToDisplaySize } from './main.js';
+  import { setBall, updatePhysics, setRunBoost, kickImpulse } from './main.js';
+  import { setupRenderer, resizeRendererToDisplaySize } from './renderer.js';
       import { HandTracker } from './hand.js';
 
       const video = document.getElementById('camera');
@@ -185,8 +186,11 @@
           return false;
         }
 
-        // Three.js 初期化
-        three = setupThree(threeCanvas);
+  // Three.js 初期化（描画とボール生成は renderer.js が担当）
+  three = setupRenderer(threeCanvas);
+  // renderer.setupRenderer は { scene, camera, renderer, clock, ball } を返す
+  // physics 側へ ball を渡す
+  setBall(three.ball);
 
         // Hand tracker 初期化
         tracker = new HandTracker({
